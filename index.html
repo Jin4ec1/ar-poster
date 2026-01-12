@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>状況応答型ARポスター (Wizard of Oz)</title>
+
+  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
+
+  <style>
+    /* 全体のスタイル調整 */
+    body { margin: 0; overflow: hidden; }
+
+    /* --- Wizard of Oz (デバッグ) コントローラーのスタイル --- */
+    #control-panel {
+      position: fixed;
+      bottom: 30px;
+      left: 0;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      z-index: 9999; /* AR画面より手前に表示するために必須 */
+    }
+
+    .mode-btn {
+      padding: 12px 24px;
+      font-size: 16px;
+      font-weight: bold;
+      color: white;
+      border: none;
+      border-radius: 30px;
+      cursor: pointer;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+      transition: transform 0.1s ease;
+    }
+
+    .mode-btn:active { transform: scale(0.95); }
+
+    /* 昼ボタンのデザイン */
+    #btn-day { background-color: #e67e22; }
+    /* 夜ボタンのデザイン */
+    #btn-night { background-color: #2c3e50; }
+  </style>
+</head>
+<body>
+
+  <div id="control-panel">
+    <button id="btn-day" class="mode-btn">☀️ 昼モード</button>
+    <button id="btn-night" class="mode-btn">🌙 夜モード</button>
+  </div>
+
+  <a-scene 
+    mindar-image="imageTargetSrc: ./assets/target.mind; uiScanning: yes;" 
+    color-space="sRGB" 
+    renderer="colorManagement: true, physicallyCorrectLights" 
+    vr-mode-ui="enabled: false" 
+    device-orientation-permission-ui="enabled: false">
+
+    <a-assets>
+      <video id="vid-day" 
+        src="./assets/video-day.mp4" 
+        preload="auto" 
+        loop="true" 
+        playsinline 
+        webkit-playsinline 
+        muted 
+        crossorigin="anonymous"></video>
+
+      <img id="img-night" src="./assets/image-night.png" crossorigin="anonymous" />
+    </a-assets>
+
+    <a-camera position="0 0 0" look-controls="false"></a-camera>
+
+    <a-entity mindar-image-target="targetIndex: 0">
+      
+      <a-video 
+        id="ar-content-day"
+        src="#vid-day" 
+        position="0 0 0" 
+        height="1" 
+        width="1" 
+        rotation="0 0 0"
+        visible="true">
+      </a-video>
+
+      <a-image 
+        id="ar-content-night"
+        src="#img-night" 
+        position="0 0 0" 
+        height="1" 
+        width="1" 
+        rotation="0 0 0"
+        visible="false">
+      </a-image>
+
+    </a-entity>
+  </a-scene>
+
+  <script>
+    // DOMの読み込み完了を待って処理を開始
+    document.addEventListener("DOMContentLoaded", () => {
+      
+      // 1. 各要素の参照を取得
+      const btnDay = document.getElementById('btn-day');
+      const btnNight = document.getElementById('btn-night');
+      
+      const elArDay = document.getElementById('ar-content-day'); // A-Frameの動画エンティティ
+      const elArNight = document.getElementById('ar-content-night'); // A-Frameの画像エンティティ
+      
+      const rawVideo = document.getElementById('vid-day'); // HTMLの生のvideoタグ
+
+      // 2. 「昼モード」への切り替え関数
+      const setDayMode = () => {
+        console.log("Switching to Day Mode");
+
+        // 表示の切り替え (排他制御)
+        elArDay.setAttribute('visible', true);
+        elArNight.setAttribute('visible', false);
+
+        // 動画の制御: 表示するときだけ再生する
+        // ※iOS等の省電力制限対策として、非表示時は止めるのが鉄則
+        rawVideo.play().catch(e => {
+            console.warn("動画の自動再生がブロックされました。ユーザー操作が必要です。", e);
+        });
+      };
+
+      // 3. 「夜モード」への切り替え関数
+      const setNightMode = () => {
+        console.log("Switching to Night Mode");
+
+        // 表示の切り替え
+        elArDay.setAttribute('visible', false);
+        elArNight.setAttribute('visible', true);
+
+        // 動画の制御: 見えないときは一時停止してリソースを節約
+        rawVideo.pause();
+      };
+
+      // 4. ボタンのクリックイベントを登録
+      btnDay.addEventListener('click', (e) => {
+        // ボタンクリックは「ユーザーアクション」とみなされるため、
+        // ここで動画再生をトリガーするとスマホでも音が鳴らせたり再生が安定します
+        e.stopPropagation(); // AR画面へのタッチ干渉を防ぐ
+        setDayMode();
+      });
+
+      btnNight.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setNightMode();
+      });
+
+      // 5. MindARのイベントリスナー (オプション)
+      // マーカーを見つけた/見失ったときのログ
+      const sceneEl = document.querySelector('a-scene');
+      const targetEl = document.querySelector('[mindar-image-target]');
+
+      targetEl.addEventListener("targetFound", event => {
+        console.log("Marker Found");
+        // マーカーを見つけたときに現在が昼モードなら動画を確実に再生させる
+        if(elArDay.getAttribute('visible')) {
+            rawVideo.play();
+        }
+      });
+
+      targetEl.addEventListener("targetLost", event => {
+        console.log("Marker Lost");
+        // マーカーを見失ったら動画を止める (バッテリー節約)
+        rawVideo.pause();
+      });
+
+    });
+  </script>
+</body>
+</html>
